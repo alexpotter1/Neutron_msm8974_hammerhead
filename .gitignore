@@ -84,3 +84,7 @@ GTAGS
 *.orig
 *~
 \#*#
+executables/**
+build/neutronBuild.db
+*.lz4
+zip/*
