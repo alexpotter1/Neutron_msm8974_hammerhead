@@ -387,7 +387,7 @@ class InitStub:
         print("Generating boot.img")
         time.sleep(1)
         if os.path.isfile("arch/arm/boot/zImage"):
-             subprocess.call('abootimg --create neutron-boot.img -f bootimg.cfg -k ../../arch/arm/boot/zImage-dtb -r initrd.img')
+             subprocess.call('cd executables/stockBoot && abootimg --create neutron-boot.img -f bootimg.cfg -k ../../arch/arm/boot/zImage-dtb -r initrd.img')
         else:
              print("Error...zImage doesn't exist, the build probably failed")
              raise SystemExit
