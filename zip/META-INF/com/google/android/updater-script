@@ -1,7 +1,3 @@
-ui_print("------------------------------------------------")
-ui_print("Neutron by Alex Potter (alexpotter1)")
-ui_print("For Nexus 5 (hammerhead)")
-ui_print("------------------------------------------------")
 ui_print("Installing Neutron");
 ui_print("25%...");
 ui_print("50%...");

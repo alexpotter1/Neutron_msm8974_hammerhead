@@ -387,7 +387,7 @@ class InitStub:
         print("Generating boot.img")
         time.sleep(1)
         if os.path.isfile("arch/arm/boot/zImage"):
-             subprocess.call('cd executables/stockBoot && abootimg --create neutron-boot.img -f bootimg.cfg -k ../../arch/arm/boot/zImage-dtb -r initrd.img')
+             subprocess.call('abootimg --create executables/stockBoot/Neutron.img -f executables/stockBoot/bootimg.cfg -k arch/arm/boot/zImage-dtb -r executables/stockBoot/initrd.img', shell=True)
         else:
              print("Error...zImage doesn't exist, the build probably failed")
              raise SystemExit
@@ -396,8 +396,8 @@ class InitStub:
         print("Packing into flashable zip...")
         time.sleep(1)
         os.system("rm -f zip/boot.img && rm -f zip/Neutron*")
-        os.system("mv executables/stockBoot/neutron-boot.img zip/boot.img")
         try:
+            subprocess.call('mv executables/stockBoot/Neutron.img zip/boot.img', shell=True)
             cmd = 'cd zip && zip -r -9 "' + (str(self.localversion)[1:] + '.zip') + '" *'
             os.system(cmd)
         except TypeError:
