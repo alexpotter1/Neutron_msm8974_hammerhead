@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 '''
-Build Daemon for the QuantumKernel compilation process.
+Build Daemon for the Neutron Kernel compilation process.
 Designed to run on Debian (Linux) enviroments;  this will fail on other OSes.
 Copyright Alex Potter 2015.
 '''
@@ -15,6 +15,7 @@ import sqlite3
 import threading
 import re
 import itertools
+import glob
 
 class bcolours:
     HEADER = '\033[95m'
@@ -143,6 +144,11 @@ class InitStub:
         time.sleep(1)
         os.environ['ARCH']="arm"
         os.environ['SUBARCH']="arm"
+        if os.path.isfile("arch/arm/boot/zImage-dtb") or os.path.isfile("arch/arm/boot/zImage"):
+            choice = input("Previous kernel zImage found. Do you want to make clean? (y/n):")
+            if choice.upper() == "N":
+                error = 1
+                self.buildInit(zImageExists=True)
         if error == None:
             print("Last build was successful. Running make clean...")
             self.spinnerShutdown = 0
@@ -157,76 +163,16 @@ class InitStub:
                     subprocess.call("rm /arch/arm/boot/compressed/piggy.lz4")
                 if os.path.isfile("arch/arm/boot/zImage"):
                     subprocess.call("rm arch/arm/boot/zImage && rm arch/arm/boot/zImage-dtb", shell=True)
-                if os.path.isfile("zip/boot.img"):
-                    subprocess.call("rm zip/Quantum*", shell=True)
-                    subprocess.call("rm zip/boot.img", shell=True)
-                    subprocess.call("rm boot.img", shell=True)
+                if os.path.isfile("zip/setup/zImage-dtb"):
+                    subprocess.call("rm zip/Neutron*", shell=True)
+                    subprocess.call("rm zip/setup/zImage-dtb", shell=True)
+                if not os.listdir("zip/modules") == []:
+                    subprocess.call("cd zip/modules; rm *", shell=True)
                 print(bcolours.OKGREEN + "OK: Cleaned build directories" + bcolours.ENDC)
             else:
                 print(bcolours.WARNING + "WARNING: make clean failed" + bcolours.ENDC)
             self.spinnerShutdown = 1
 
-            ramdisk_choice = input("Do you want to generate a new ramdisk? (y/n): ")
-            if ramdisk_choice.upper() == "Y":
-                    print("Please download a boot.img file for your device (maybe in CM zips?)")
-                    print("If you've already downloaded one, just press Enter at the next prompt.")
-                    input("Press Enter when you have extracted that boot.img into the executables/stockBoot folder: ")
-
-                    if os.path.isfile("executables/stockBoot/boot.img"):
-                        print("Processing ramdisk...")
-                        time.sleep(1)
-                        if os.path.isfile("executables/stockBoot/initrd.img"):
-                            subprocess.call("rm executables/stockBoot/initrd.img", shell=True)
-                        p = subprocess.Popen("cd executables/stockBoot && abootimg -x boot.img", shell=True,
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                        output, err = p.communicate()
-                        rc = p.returncode
-                        if rc == 0:
-                            print(bcolours.OKGREEN + "OK: Ramdisk generated" + bcolours.ENDC)
-                        else:
-                            print(bcolours.FAIL + "FAIL: Ramdisk generation error" + bcolours.ENDC)
-                        # subprocess.call("rm -r boot", shell=True)
-                    else:
-                        print("Please download the boot.img file for your device, and make sure it is in the correct folder.")
-                        raise SystemExit
-
-            time.sleep(0.5)
-            # print("Generating dt.img from sources...")
-            # subprocess.call("rm executables/dt.img", shell=True)
-            # p = subprocess.Popen("executables/dtbTool -s 2048 -o executables/dt.img -p scripts/dtc/ arch/arm/boot/", shell=True,
-            # stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            # output, err = p.communicate()
-            # rc = p.returncode
-            # if "Found 3 unique" in str(output):
-            #     print(bcolours.OKGREEN + "OK: DT image generated" + bcolours.ENDC)
-            # else:
-                # print(bcolours.WARNING + "WARNING: DT image generation failed" + bcolours.ENDC)
-                # print(bcolours.WARNING + "Attempting manual generation..." + bcolours.ENDC)
-                # time.sleep(0.2)
-                # dtcFile = ['']
-                # pos = 0
-                # dt = ""
-                # self.dtbSucceeded = 0
-                # while pos <= 2:
-                    # p = subprocess.Popen("scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/%s.dtb arch/arm/boot/dts/lge/msm8974-g2/msm8974-g2-open_com/%s.dts" % (dtcFile[pos], dtcFile[pos]),
-                    # shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    # for line in iter(p.stdout.readline, b''):
-                    #     dt = line.rstrip()
-                    # if dt == "":
-                    #     self.dtbSucceeded += 1
-
-                    # pos += 1
-
-                # if self.dtbSucceeded == 3:
-                #     p = subprocess.Popen("executables/dtbTool -s 2048 -o executables/dt.img -p scripts/dtc/ arch/arm/boot/", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                #     output, err = p.communicate()
-#
-                #     if "Found 3 unique" in str(output):
-                #         print(bcolours.OKGREEN + "OK: device tree image generated successfully" + bcolours.ENDC)
-                #     else:
-                #         print(bcolours.WARNING + "WARNING: Not all device tree binaries exist but device tree image generated successfully" + bcolours.ENDC)
-                # else:
-                #     print(bcolours.FAIL + "FAIL: device tree image generation failed" + bcolours.ENDC)
 
             self.localversion += str(input("Enter new version string: "))
             self.buildInit(localversionarg=1) # use the localversion that the user entered
@@ -278,45 +224,50 @@ class InitStub:
                 raise SystemExit
 
 
-    def buildInit(self, localversionarg):
-        if localversionarg == 0:
-            localversion = str(self.data[0][2])
-            self.localversion += localversion
-            makeThread = threading.Thread(target=self.buildMake)
-            makeThread.start()
+    def buildInit(self, localversionarg=None, zImageExists=False):
+        if zImageExists == True:
+            self.createFlashableZip()
         else:
-            localversion = self.localversion
-        subprocess.call("clear", shell=True)
-        print("---------------------------------------------------------------------------------")
-        print(bcolours.HEADER + "Neutron Build Process" + bcolours.ENDC)
-        print("---------------------------------------------------------------------------------")
-        print(bcolours.BOLD + "BUILD VARIABLES" + bcolours.ENDC)
+            if localversionarg == 0:
+                localversion = str(self.data[0][2])
+                self.localversion += localversion
+                makeThread = threading.Thread(target=self.buildMake)
+                makeThread.start()
+            else:
+                localversion = self.localversion
+            subprocess.call("clear", shell=True)
+            print("---------------------------------------------------------------------------------")
+            print(bcolours.HEADER + "Neutron Build Process" + bcolours.ENDC)
+            print("---------------------------------------------------------------------------------")
+            print(bcolours.BOLD + "BUILD VARIABLES" + bcolours.ENDC)
 
-        self.cursor.execute('SELECT * FROM {tn} WHERE {cn}="SaberMod"'.format(tn="UserDefaults", cn="VariableKey"))
-        data = self.cursor.fetchall()
+            self.cursor.execute('SELECT * FROM {tn} WHERE {cn}="SaberMod"'.format(tn="UserDefaults", cn="VariableKey"))
+            data = self.cursor.fetchall()
 
-        path = str(os.environ.get('CROSS_COMPILE'))
-        version = re.search('el/(.*)/b', path)
-        if len(data) == 0:
-            print(bcolours.OKBLUE + "Toolchain version: %s" % str(version.group(1)) + bcolours.ENDC)
-        else:
-            print(bcolours.OKBLUE + "Toolchain version: %s" % str(version.group(1)) + " " + "SaberMod GCC" + bcolours.ENDC)
+            path = str(os.environ.get('CROSS_COMPILE'))
+            version = re.search('el/(.*)/b', path)
+            if len(data) == 0:
+                print(bcolours.OKBLUE + "Toolchain version: %s" % str(version.group(1)) + bcolours.ENDC)
+            else:
+                print(bcolours.OKBLUE + "Toolchain version: %s" % str(version.group(1)) + " " + "SaberMod GCC" + bcolours.ENDC)
 
-        print(bcolours.OKBLUE + "Toolchain path: %s" % path + bcolours.ENDC)
-        print(bcolours.OKBLUE + "Kernel version: %s" % localversion + bcolours.ENDC)
-        p = subprocess.Popen("uname -o -n -i -v -r", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        for line in iter(p.stdout.readline, b''):
-            self.lines = line.rstrip()
-        print(bcolours.OKBLUE + "Host: %s" % str(self.lines.decode('utf-8')) + bcolours.ENDC)
-        print(bcolours.OKBLUE + "CPU: %s with %i core(s)" % (self.CPUversion.decode("utf-8"), self.CPUcores) + bcolours.ENDC)
-        print("                                                                             ")
-        OK = input("If this is okay, press Enter to continue or Q to quit...")
-        if OK.upper() == "Q":
-            raise SystemExit
-        else:
-            self.conn.close()
-            buildThread = threading.Thread(target=self.build)
-            buildThread.start()
+            print(bcolours.OKBLUE + "Toolchain path: %s" % path + bcolours.ENDC)
+            print(bcolours.OKBLUE + "Kernel version: %s" % localversion + bcolours.ENDC)
+            p = subprocess.Popen("uname -o -n -i -v -r", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            for line in iter(p.stdout.readline, b''):
+                self.lines = line.rstrip()
+            print(bcolours.OKBLUE + "Host: %s" % str(self.lines.decode('utf-8')) + bcolours.ENDC)
+            print(bcolours.OKBLUE + "CPU: %s with %i core(s)" % (self.CPUversion.decode("utf-8"), self.CPUcores) + bcolours.ENDC)
+            print("                                                                             ")
+            OK = input("If this is okay, press Enter to continue or Q to quit...")
+            if OK.upper() == "Q":
+                raise SystemExit
+            else:
+                self.conn.close()
+                buildThread = threading.Thread(target=self.build)
+                buildThread.start()
+
+
 
 
 
@@ -339,6 +290,43 @@ class InitStub:
 
         makeThread = threading.Thread(target=self.buildMake)
         makeThread.start()
+
+    def createFlashableZip(self):
+        print(bcolours.OKBLUE + "Moving kernel modules..." + bcolours.ENDC)
+        time.sleep(0.5)
+        subprocess.call('find . -name "*.ko" -type f -exec cp {} zip/modules \;', shell=True)
+
+        print(bcolours.OKBLUE + "Packing into flashable zip..." + bcolours.ENDC)
+        time.sleep(0.5)
+        subprocess.call("rm zip/Neutron*.zip", shell=True)
+        try:
+            subprocess.call("cp arch/arm/boot/zImage-dtb zip/setup/zImage-dtb", shell=True)
+            cmd = 'cd zip && zip -r -9 "' + (str(self.localversion)[1:] + '.zip') + '" *'
+            os.system(cmd)
+        except TypeError:
+            cmd = 'cd zip && zip -r -9 "Neutron-undefined.zip" *'
+            os.system(cmd)
+
+
+        print(bcolours.OKBLUE + "Signing zip file..." + bcolours.ENDC)
+        if os.listdir('build/openssl') == []:
+            print("Generating OpenSSL certificates...")
+            time.sleep(0.3)
+            print("Follow the prompts on screen.")
+            time.sleep(2)
+            subprocess.call("cd build/openssl && openssl genrsa -out sign.key 8192; openssl req -new -key sign.key -out request.pem; openssl x509 -req -days 9999 -in request.pem -signkey sign.key -out certificate.pem; openssl pkcs8 -topk8 -outform DER -in sign.key -inform PEM -out key.pk8 -nocrypt", shell=True)
+
+        path = glob.glob("zip/*.zip")[0]
+        signed_name = str(self.localversion)[1:] + "-signed" + ".zip"
+        subprocess.call("java -jar build/signapk.jar build/openssl/certificate.pem build/openssl/key.pk8 %s zip/%s.zip" % (path, signed_name), shell=True)
+        #subprocess.call("build/zipadjust zip/Neutron-signed.zip zip/Neutron-fixed.zip; rm zip/Neutron-signed.zip", shell=True)
+        #subprocess.call("java -jar build/minsignapk.jar build/openssl/certificate.pem build/openssl/key.pk8 zip/Neutron-fixed.zip zip/Neutron-%s; rm zip/Neutron-fixed.zip" % signed_name, shell=True)
+
+        print(bcolours.OKGREEN + "Done! Closing processes..." + bcolours.ENDC)
+        subprocess.call("rm include/generated/compile.h", shell=True)
+        subprocess.call("rm .build.py.conf", shell=True)
+        time.sleep(2)
+        raise SystemExit
 
     def buildMake(self):
         import time
@@ -384,33 +372,12 @@ class InitStub:
             self.conn.close()
             raise SystemExit
 
-        print("Generating boot.img")
-        time.sleep(1)
-        if os.path.isfile("arch/arm/boot/zImage"):
-             subprocess.call('abootimg --create executables/stockBoot/Neutron.img -f executables/stockBoot/bootimg.cfg -k arch/arm/boot/zImage-dtb -r executables/stockBoot/initrd.img', shell=True)
-        else:
-             print("Error...zImage doesn't exist, the build probably failed")
-             raise SystemExit
-
-
-        print("Packing into flashable zip...")
-        time.sleep(1)
-        os.system("rm -f zip/boot.img && rm -f zip/Neutron*")
-        try:
-            subprocess.call('mv executables/stockBoot/Neutron.img zip/boot.img', shell=True)
-            cmd = 'cd zip && zip -r -9 "' + (str(self.localversion)[1:] + '.zip') + '" *'
-            os.system(cmd)
-        except TypeError:
-            cmd = 'cd zip && zip -r -9 "Neutron-undefined.zip" *'
-            os.system(cmd)
-
         self.spinnerShutdown = 1
 
-        print(bcolours.OKGREEN + "Done! Closing processes..." + bcolours.ENDC)
-        subprocess.call("rm include/generated/compile.h", shell=True)
-        subprocess.call("rm .build.py.conf", shell=True)
-        time.sleep(2)
-        raise SystemExit
+        if os.path.isfile("arch/arm/boot/zImage-dtb"):
+            self.createFlashableZip()
+        else:
+            print("Hmm...the zImage can't be found.")
 
 
 
@@ -419,7 +386,7 @@ subprocess.call("clear", shell=True)
 print("-----------------------------------------------------------------------------------------")
 print(bcolours.HEADER + "Neutron hammerhead Debian/Linux build tool by Alex Potter (alexpotter1)" + bcolours.ENDC)
 print(bcolours.HEADER + "Please only run on Linux (Debian, Ubuntu, etc)." + bcolours.ENDC)
-print(bcolours.HEADER + "Version v2.0" + bcolours.ENDC)
+print(bcolours.HEADER + "Version v3.0" + bcolours.ENDC)
 print("-----------------------------------------------------------------------------------------")
 
 app = InitStub()

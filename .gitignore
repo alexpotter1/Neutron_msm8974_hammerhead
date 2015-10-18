@@ -86,5 +86,6 @@ GTAGS
 \#*#
 executables/**
 build/neutronBuild.db
+build/openssl/*
+zip/setup/zImage-dtb
 *.lz4
-zip/*
